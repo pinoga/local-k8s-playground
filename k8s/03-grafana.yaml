@@ -20,14 +20,16 @@ data:
   dashboards.yaml: |
     apiVersion: 1
     providers:
-      - name: 'default'
+      - name: 'hpa-demo-dashboards'
         orgId: 1
         folder: ''
         type: file
         disableDeletion: false
         editable: true
+        updateIntervalSeconds: 10
         options:
           path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: false
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -42,11 +44,13 @@ data:
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
       "id": null,
+      "tags": ["hpa-demo", "server", "hpa"],
       "links": [
         {
-          "title": "k6 Client Load & Tail Latency Dashboard",
-          "type": "link",
-          "url": "/d/k6-client-tail-latency/k6-client-load-and-tail-latency?var-deployment=$deployment",
+          "title": "Dashboards",
+          "type": "dashboards",
+          "tags": ["hpa-demo"],
+          "asDropdown": false,
           "keepTime": true,
           "includeVars": true,
           "targetBlank": false
@@ -55,7 +59,7 @@ data:
       "panels": [
         {
           "type": "text",
-          "title": "Server & HPA View (prom-client Metrics) — Click top-right link for k6 Client Dashboard",
+          "title": "Server & HPA View (prom-client Metrics)",
           "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
           "options": {
             "mode": "markdown",
@@ -324,7 +328,7 @@ data:
       "time": { "from": "now-10m", "to": "now" },
       "title": "1. Server & HPA: CPU Usage vs Event Loop Delay",
       "uid": "hpa-cpu-vs-eld",
-      "version": 2
+      "version": 3
     }
   k6-client-dashboard.json: |
     {
@@ -333,11 +337,13 @@ data:
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
       "id": null,
+      "tags": ["hpa-demo", "k6", "client"],
       "links": [
         {
-          "title": "Server & HPA Dashboard",
-          "type": "link",
-          "url": "/d/hpa-cpu-vs-eld/1-server-and-hpa-cpu-usage-vs-event-loop-delay?var-deployment=$deployment",
+          "title": "Dashboards",
+          "type": "dashboards",
+          "tags": ["hpa-demo"],
+          "asDropdown": false,
           "keepTime": true,
           "includeVars": true,
           "targetBlank": false
@@ -346,11 +352,11 @@ data:
       "panels": [
         {
           "type": "text",
-          "title": "k6 Client Load & Tail Latency Dashboard (Open-Model Arrival Rate)",
+          "title": "k6 Client Load & Tail Latency Dashboard (Single-Target Open-Model Benchmark)",
           "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
           "options": {
             "mode": "markdown",
-            "content": "**Client-side perspective exported directly by Grafana k6 (`--out experimental-prometheus-rw`)**. Use the **`Deployment` picker** above to compare `app-cpu` vs `app-eld`. k6 runs two parallel `constant-arrival-rate` scenarios (avoiding Coordinated Omission) with `noConnectionReuse: true` and tracks **p50, p90, p95, p99 tail latencies, TTFB (`http_req_waiting`), RPS, check pass rates, and active VUs**."
+            "content": "**Client-side perspective exported directly by Grafana k6 (`--out experimental-prometheus-rw`)**. Use the **`Deployment` picker** above to inspect `app-cpu` or `app-eld`, or compare both across sequential runs. Running each deployment in an isolated Kubernetes `Job` prevents noisy-neighbor CPU contention on the host and tracks **p50, p90, p95, p99 tail latencies, TTFB (`http_req_waiting`), RPS, check pass rates, and active VUs**."
           }
         },
         {
@@ -514,18 +520,18 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "k6_vus",
-              "legendFormat": "Active VUs"
+              "expr": "k6_vus{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} Active VUs"
             },
             {
               "refId": "B",
-              "expr": "k6_vus_max",
-              "legendFormat": "Allocated Max VUs"
+              "expr": "k6_vus_max{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} Max VUs"
             },
             {
               "refId": "C",
-              "expr": "rate(k6_dropped_iterations_total[15s])",
-              "legendFormat": "Dropped iterations/s"
+              "expr": "rate(k6_dropped_iterations_total{deployment=~\"$deployment\"}[15s])",
+              "legendFormat": "{{deployment}} Dropped iterations/s"
             }
           ]
         },
@@ -623,7 +629,7 @@ data:
       "time": { "from": "now-10m", "to": "now" },
       "title": "2. k6 Client Load & Tail Latency",
       "uid": "k6-client-tail-latency",
-      "version": 1
+      "version": 2
     }
 ---
 apiVersion: apps/v1
@@ -656,8 +662,6 @@ spec:
               value: "Admin"
             - name: GF_AUTH_DISABLE_LOGIN_FORM
               value: "true"
-            - name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH
-              value: "/var/lib/grafana/dashboards/hpa-cpu-vs-eld.json"
             - name: GF_USERS_DEFAULT_THEME
               value: "dark"
           resources:

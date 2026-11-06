@@ -6,8 +6,8 @@ A minimal, low-overhead local Kubernetes stack designed for a 6-core Intel Mac m
 
 - [`AGENTS.md`](AGENTS.md): Project rules and agent guidelines.
 - [`app/`](app/): Node.js server exporting standard Prometheus metrics via `prom-client` (`nodejs_eventloop_lag_p99_seconds`, `process_cpu_seconds_total`, `http_request_duration_seconds_bucket`).
-- [`k6s/`](k6s/): Standalone **Grafana k6** load-testing scripts (`loadgen.js`, `ramping-arrival.js`) using open-model arrival rates (`constant-arrival-rate` / `ramping-arrival-rate`), SLO thresholds, and Prometheus Remote Write (`--out experimental-prometheus-rw`).
-- [`k8s/`](k8s/) & [`kustomization.yaml`](kustomization.yaml): Declarative Kustomize IaC bundling KEDA, VictoriaMetrics, Grafana (with Server & k6 Client dashboards), Deployments, HPAs, and the k6 ConfigMap generator.
+- [`k6s/`](k6s/): Standalone **Grafana k6** load-testing scripts (`loadgen.js`, `ramping-arrival.js`) targeting a single deployment at a time using open-model arrival rates (`constant-arrival-rate` / `ramping-arrival-rate`), SLO thresholds, and Prometheus Remote Write (`--out experimental-prometheus-rw`).
+- [`k8s/`](k8s/) & [`kustomization.yaml`](kustomization.yaml): Declarative Kustomize IaC bundling KEDA, VictoriaMetrics, Grafana (with Server & k6 Client dashboards listed under Grafana Dashboards), Deployments, HPAs, and isolated k6 `Job`s.
 - [`scripts/`](scripts/): Helper scripts (`setup.sh`, `load-profile.sh`).
 
 ---
@@ -21,8 +21,8 @@ A minimal, low-overhead local Kubernetes stack designed for a 6-core Intel Mac m
 | **KEDA** | Queries VictoriaMetrics every `5s` to drive the Event Loop Delay HPA | ~45 MB RAM |
 | **`app-cpu` + `app-cpu-hpa`** | Node.js (`prom-client`) Deployment scaled by standard K8s CPU HPA (`averageUtilization: 65%` of `250m`) | `250m` CPU req / pod |
 | **`app-eld` + `app-eld-hpa`** | Identical Node.js Deployment scaled by KEDA HPA on `nodejs_eventloop_lag_p99_seconds` (>20ms above min resolution) | `250m` CPU req / pod |
-| **`grafana`** | Pre-provisioned with **2 Dashboards** (Server/HPA View & k6 Client Tail Latency View), both with a **`Deployment` picker (`All`, `app-cpu`, `app-eld`)** | ~55 MB RAM |
-| **`loadgen` (`grafana/k6`)** | Runs `k6s/loadgen.js` and streams client tail latency (`p50`, `p90`, `p95`, `p99`), TTFB, RPS, and VUs to VictoriaMetrics | ~45 MB RAM |
+| **`grafana`** | Pre-provisioned with **2 Dashboards** listed under **Dashboards** (Server/HPA View & k6 Client Tail Latency View), both with a **`Deployment` picker (`All`, `app-cpu`, `app-eld`)** | ~55 MB RAM |
+| **`loadgen-app-cpu` & `loadgen-app-eld`** | Isolated Kubernetes `batch/v1` `Job`s (`suspend: true` by default) running `grafana/k6` for a fixed duration against one deployment at a time | ~45 MB RAM |
 
 ---
 
@@ -38,13 +38,21 @@ Grafana is exposed on NodePort `30300` (or via port-forward on `http://localhost
 ```bash
 kubectl -n hpa-demo port-forward svc/grafana 3000:3000
 ```
-Open **http://localhost:3000**:
-- **Dashboard 1 (Default Home)**: *1. Server & HPA: CPU Usage vs Event Loop Delay* (`prom-client` metrics + replica counts)
-- **Dashboard 2 (Top-right link)**: *2. k6 Client Load & Tail Latency* (`k6_http_req_duration_p99/p95/p90/p50`, TTFB `k6_http_req_waiting_*`, RPS, Checks, VUs)
+Open **http://localhost:3000/dashboards** to view both provisioned dashboards:
+1. **1. Server & HPA: CPU Usage vs Event Loop Delay** (`prom-client` metrics + replica counts)
+2. **2. k6 Client Load & Tail Latency** (`k6_http_req_duration_p99/p95/p90/p50`, TTFB `k6_http_req_waiting_*`, RPS, Checks, VUs)
 
-### 3. Switch Load Profiles
+### 3. Run Isolated k6 Benchmark Jobs (One Deployment at a Time)
 ```bash
-./scripts/load-profile.sh microburst
-./scripts/load-profile.sh heavy
-./scripts/load-profile.sh idle
+# Run 3m microburst test against app-eld only (scales out on Event Loop Delay)
+./scripts/load-profile.sh app-eld microburst
+
+# Run 3m microburst test against app-cpu only (stays stuck at 1 pod, high tail latency)
+./scripts/load-profile.sh app-cpu microburst
+
+# Run 4m30s staged ramping test (ramping-arrival.js)
+./scripts/load-profile.sh app-eld ramping
+
+# Stop any running loadgen Job
+./scripts/load-profile.sh stop
 ```
