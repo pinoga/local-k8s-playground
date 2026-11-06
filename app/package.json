@@ -2,6 +2,7 @@
   "name": "hpa-eld-demo",
   "version": "1.0.0",
   "description": "Node.js demo using prom-client to expose Event Loop Delay, CPU, and HTTP latency metrics for Kubernetes HPA comparison",
+  "type": "module",
   "main": "server.js",
   "dependencies": {
     "prom-client": "^15.1.3"

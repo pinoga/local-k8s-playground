@@ -1,9 +1,7 @@
-'use strict';
-
-const http = require('node:http');
-const { performance } = require('node:perf_hooks');
-const os = require('node:os');
-const client = require('prom-client');
+import http from 'node:http';
+import { performance } from 'node:perf_hooks';
+import os from 'node:os';
+import client from 'prom-client';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const DEPLOYMENT = process.env.DEPLOYMENT_NAME || 'app-unknown';
@@ -64,55 +62,55 @@ function blockEventLoop(blockMs) {
   return acc;
 }
 
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
-    if (url.pathname === '/healthz') {
-      res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end('ok\n');
-      return;
+  if (url.pathname === '/healthz') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('ok\n');
+    return;
+  }
+
+  if (url.pathname === '/metrics') {
+    try {
+      const metrics = await register.metrics();
+      res.writeHead(200, { 'Content-Type': register.contentType });
+      res.end(metrics);
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end(err.message);
     }
+    return;
+  }
 
-    if (url.pathname === '/metrics') {
-        try {
-          const metrics = await register.metrics();
-          res.writeHead(200, { 'Content-Type': register.contentType });
-          res.end(metrics);
-        } catch (err) {
-          res.writeHead(500, { 'Content-Type': 'text/plain' });
-          res.end(err.message);
-        }
-        return;
-      }
+  // Workload endpoint: /work?ioMs=45&blockMs=18
+  const route = '/work';
+  const method = req.method || 'GET';
+  const endTimer = httpRequestDurationSeconds.startTimer({ method, route });
+  httpActiveRequests.inc({ route });
 
-      // Workload endpoint: /work?ioMs=45&blockMs=18
-      const route = '/work';
-      const method = req.method || 'GET';
-      const endTimer = httpRequestDurationSeconds.startTimer({ method, route });
-      httpActiveRequests.inc({ route });
+  const ioMs = parseFloat(url.searchParams.get('ioMs') ?? '45');
+  const blockMs = parseFloat(url.searchParams.get('blockMs') ?? '18');
 
-      const ioMs = parseFloat(url.searchParams.get('ioMs') ?? '45');
-      const blockMs = parseFloat(url.searchParams.get('blockMs') ?? '18');
+  setTimeout(() => {
+    blockEventLoop(blockMs);
+    const durationSec = endTimer({ status_code: '200' });
+    httpActiveRequests.dec({ route });
+    httpRequestsTotal.inc({ method, route, status_code: '200' });
 
-      setTimeout(() => {
-        blockEventLoop(blockMs);
-        const durationSec = endTimer({ status_code: '200' });
-        httpActiveRequests.dec({ route });
-        httpRequestsTotal.inc({ method, route, status_code: '200' });
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            deployment: DEPLOYMENT,
-            pod: POD_NAME,
-            ioMs,
-            blockMs,
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        deployment: DEPLOYMENT,
+        pod: POD_NAME,
+        ioMs,
+        blockMs,
         durationMs: Number((durationSec * 1000).toFixed(2))
-          }) + '\n'
-        );
-      }, Math.max(0, ioMs));
-    });
+      }) + '\n'
+    );
+  }, Math.max(0, ioMs));
+});
 
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[${DEPLOYMENT}/${POD_NAME}] Listening on :${PORT} with prom-client metrics`);
-  });
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`[${DEPLOYMENT}/${POD_NAME}] Listening on :${PORT} with prom-client metrics (ESM/Node ${process.version})`);
+});
