@@ -65,34 +65,38 @@ spec:
       targetPort: 3000
       name: http
 ---
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
+# ScaledObject for app-cpu using Prometheus CPU utilization trigger so it can scale to 0
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
 metadata:
   name: app-cpu-hpa
   namespace: hpa-demo
 spec:
   scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
     name: app-cpu
-  minReplicas: 1
-  maxReplicas: 5
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 0
-      policies:
-        - type: Pods
-          value: 4
-          periodSeconds: 15
-    scaleDown:
-      stabilizationWindowSeconds: 60
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 65
+  pollingInterval: 5
+  cooldownPeriod: 30
+  minReplicaCount: 0
+  maxReplicaCount: 5
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 4
+              periodSeconds: 15
+        scaleDown:
+          stabilizationWindowSeconds: 30
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://victoriametrics.hpa-demo.svc.cluster.local:8428
+        metricName: app_cpu_utilization_percent
+        # Average CPU % across app-cpu pods relative to 250m request
+        query: sum(rate(process_cpu_seconds_total{deployment="app-cpu"}[20s]) / 0.25 * 100)
+        threshold: "65"
 ---
 # ============================================================================
 # Deployment 2: app-eld (Scaled by KEDA HPA on prom-client Event Loop Lag p99)
@@ -171,8 +175,8 @@ spec:
   scaleTargetRef:
     name: app-eld
   pollingInterval: 5
-  cooldownPeriod: 60
-  minReplicaCount: 1
+  cooldownPeriod: 30
+  minReplicaCount: 0
   maxReplicaCount: 5
   advanced:
     horizontalPodAutoscalerConfig:
