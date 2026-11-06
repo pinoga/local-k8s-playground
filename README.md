@@ -22,7 +22,7 @@ A minimal, low-overhead local Kubernetes stack designed for a 6-core Intel Mac m
 | **`app-cpu` + `app-cpu-hpa`** | Node.js (`prom-client`) Deployment scaled by standard K8s CPU HPA (`averageUtilization: 65%` of `250m`) | `250m` CPU req / pod |
 | **`app-eld` + `app-eld-hpa`** | Identical Node.js Deployment scaled by KEDA HPA on `nodejs_eventloop_lag_p99_seconds` (>20ms above min resolution) | `250m` CPU req / pod |
 | **`grafana`** | Pre-provisioned with **2 Dashboards** listed under **Dashboards** (Server/HPA View & k6 Client Tail Latency View), both with a **`Deployment` picker (`All`, `app-cpu`, `app-eld`)** | ~55 MB RAM |
-| **`loadgen-app-cpu` & `loadgen-app-eld`** | Isolated Kubernetes `batch/v1` `Job`s (`suspend: true` by default) running `grafana/k6` for a fixed duration against one deployment at a time | ~45 MB RAM |
+| **`loadgen` Jobs (`k6`)** | On-demand Kubernetes `batch/v1` `Job`s running `grafana/k6` for a fixed duration against one deployment at a time via `scripts/load-profile.sh` | ~45 MB RAM |
 
 ---
 

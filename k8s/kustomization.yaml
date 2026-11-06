@@ -7,4 +7,3 @@ resources:
   - 01-victoriametrics.yaml
   - 02-apps-and-hpas.yaml
   - 03-grafana.yaml
-  - 04-loadgen.yaml
