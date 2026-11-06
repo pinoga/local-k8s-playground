@@ -11,8 +11,8 @@ fi
 echo "2. Building demo Node.js image (hpa-eld-demo:latest)..."
 docker build -t hpa-eld-demo:latest "$ROOT_DIR/app"
 
-echo "3. Applying full declarative stack (KEDA, VictoriaMetrics, Grafana, Apps, HPAs, LoadGen) via Kustomize..."
-kubectl apply --server-side -k "$ROOT_DIR/k8s"
+echo "3. Applying full declarative stack (KEDA, VictoriaMetrics, Grafana, Apps, HPAs, k6 LoadGen) via Kustomize..."
+kubectl apply --server-side --force-conflicts -k "$ROOT_DIR"
 
 echo "4. Waiting for KEDA and hpa-demo deployments to become Ready..."
 kubectl -n keda rollout status deployment/keda-operator --timeout=120s

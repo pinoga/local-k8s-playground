@@ -42,15 +42,24 @@ data:
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
       "id": null,
-      "links": [],
+      "links": [
+        {
+          "title": "k6 Client Load & Tail Latency Dashboard",
+          "type": "link",
+          "url": "/d/k6-client-tail-latency/k6-client-load-and-tail-latency?var-deployment=$deployment",
+          "keepTime": true,
+          "includeVars": true,
+          "targetBlank": false
+        }
+      ],
       "panels": [
         {
           "type": "text",
-          "title": "Why Event Loop Delay Beats CPU for Node.js Autoscaling",
+          "title": "Server & HPA View (prom-client Metrics) — Click top-right link for k6 Client Dashboard",
           "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
           "options": {
             "mode": "markdown",
-            "content": "**Use the `Deployment` picker above** to inspect `app-cpu`, `app-eld`, or compare `All` side-by-side. Under interleaved async I/O + synchronous JS bursts, the single-threaded Node.js event loop queues up (`nodejs_eventloop_delay_p99_ms` > 80ms, spiking HTTP p95 latency) while average container CPU stays around **40–50%** (below the **65% CPU HPA threshold**). `app-eld` scales out immediately on Event Loop Delay (> 20ms) and keeps latency low, while `app-cpu` fails to scale (or scales far too late)."
+            "content": "**Use the `Deployment` picker above** (`All`, `app-cpu`, `app-eld`) to filter or compare side-by-side. Pods export standard **`prom-client`** metrics (`nodejs_eventloop_lag_p99_seconds`, `process_cpu_seconds_total`, `http_request_duration_seconds_bucket`). Under micro-burst traffic from **k6**, `app-cpu` stays around **~48% CPU** (below its **65% CPU HPA threshold**) and never scales, suffering severe event loop lag and tail latency. `app-eld` scales out immediately on `nodejs_eventloop_lag_p99_seconds` (>20ms) and keeps tail latency low."
           }
         },
         {
@@ -62,7 +71,7 @@ data:
             "defaults": {
               "unit": "short",
               "min": 0,
-              "max": 7,
+              "max": 6,
               "custom": {
                 "drawStyle": "line",
                 "lineInterpolation": "stepAfter",
@@ -76,19 +85,19 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "count(nodejs_eventloop_delay_p99_ms{deployment=~\"$deployment\"}) by (deployment)",
+              "expr": "count(nodejs_eventloop_lag_p99_seconds{deployment=~\"$deployment\"}) by (deployment)",
               "legendFormat": "{{deployment}} replicas"
             }
           ]
         },
         {
           "type": "timeseries",
-          "title": "2. HTTP Request Latency — p95 & p50 (ms)",
+          "title": "2. Server HTTP Tail Latency — p99, p95, p50 (prom-client Histogram)",
           "gridPos": { "h": 8, "w": 8, "x": 8, "y": 3 },
           "datasource": { "type": "prometheus", "uid": "victoriametrics" },
           "fieldConfig": {
             "defaults": {
-              "unit": "ms",
+              "unit": "s",
               "min": 0,
               "custom": {
                 "drawStyle": "line",
@@ -103,19 +112,24 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "avg(http_request_duration_p95_ms{deployment=~\"$deployment\"}) by (deployment)",
-              "legendFormat": "{{deployment}} p95 latency"
+              "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{deployment=~\"$deployment\"}[20s])) by (le, deployment))",
+              "legendFormat": "{{deployment}} p99"
             },
             {
               "refId": "B",
-              "expr": "avg(http_request_duration_p50_ms{deployment=~\"$deployment\"}) by (deployment)",
-              "legendFormat": "{{deployment}} p50 latency"
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{deployment=~\"$deployment\"}[20s])) by (le, deployment))",
+              "legendFormat": "{{deployment}} p95"
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{deployment=~\"$deployment\"}[20s])) by (le, deployment))",
+              "legendFormat": "{{deployment}} p50"
             }
           ]
         },
         {
           "type": "timeseries",
-          "title": "3. Throughput (Requests / sec)",
+          "title": "3. Server Throughput (Requests / sec)",
           "gridPos": { "h": 8, "w": 8, "x": 16, "y": 3 },
           "datasource": { "type": "prometheus", "uid": "victoriametrics" },
           "fieldConfig": {
@@ -135,19 +149,19 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(rate(http_requests_total{deployment=~\"$deployment\"}[10s])) by (deployment)",
+              "expr": "sum(rate(http_requests_total{deployment=~\"$deployment\"}[15s])) by (deployment)",
               "legendFormat": "{{deployment}} req/s (total)"
             },
             {
               "refId": "B",
-              "expr": "avg(rate(http_requests_total{deployment=~\"$deployment\"}[10s])) by (deployment)",
+              "expr": "avg(rate(http_requests_total{deployment=~\"$deployment\"}[15s])) by (deployment)",
               "legendFormat": "{{deployment}} req/s (per pod)"
             }
           ]
         },
         {
           "type": "timeseries",
-          "title": "4. Event Loop Delay — p99 & Mean (ELD HPA Threshold = 20ms)",
+          "title": "4. Node.js Event Loop Lag — p99, p90 & Mean (ELD HPA Threshold = 20ms)",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
           "datasource": { "type": "prometheus", "uid": "victoriametrics" },
           "fieldConfig": {
@@ -175,12 +189,17 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "avg(nodejs_eventloop_delay_p99_ms{deployment=~\"$deployment\"}) by (deployment)",
+              "expr": "avg((nodejs_eventloop_lag_p99_seconds{deployment=~\"$deployment\"} - nodejs_eventloop_lag_min_seconds{deployment=~\"$deployment\"}) * 1000) by (deployment)",
               "legendFormat": "{{deployment}} ELD p99"
             },
             {
               "refId": "B",
-              "expr": "avg(nodejs_eventloop_delay_mean_ms{deployment=~\"$deployment\"}) by (deployment)",
+              "expr": "avg((nodejs_eventloop_lag_p90_seconds{deployment=~\"$deployment\"} - nodejs_eventloop_lag_min_seconds{deployment=~\"$deployment\"}) * 1000) by (deployment)",
+              "legendFormat": "{{deployment}} ELD p90"
+            },
+            {
+              "refId": "C",
+              "expr": "avg((nodejs_eventloop_lag_mean_seconds{deployment=~\"$deployment\"} - nodejs_eventloop_lag_min_seconds{deployment=~\"$deployment\"}) * 1000) by (deployment)",
               "legendFormat": "{{deployment}} ELD mean"
             }
           ]
@@ -216,19 +235,14 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "avg(app_cpu_utilization_percent{deployment=~\"$deployment\"}) by (deployment)",
-              "legendFormat": "{{deployment}} avg CPU %"
-            },
-            {
-              "refId": "B",
               "expr": "avg(rate(process_cpu_seconds_total{deployment=~\"$deployment\"}[20s]) / 0.25 * 100) by (deployment)",
-              "legendFormat": "{{deployment}} 20s rate CPU %"
+              "legendFormat": "{{deployment}} avg CPU % (20s rate)"
             }
           ]
         },
         {
           "type": "timeseries",
-          "title": "6. Per-Pod Event Loop Delay p99 (ms)",
+          "title": "6. Per-Pod Event Loop Lag p99 (ms)",
           "gridPos": { "h": 7, "w": 12, "x": 0, "y": 19 },
           "datasource": { "type": "prometheus", "uid": "victoriametrics" },
           "fieldConfig": {
@@ -248,7 +262,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "nodejs_eventloop_delay_p99_ms{deployment=~\"$deployment\"}",
+              "expr": "(nodejs_eventloop_lag_p99_seconds{deployment=~\"$deployment\"} - nodejs_eventloop_lag_min_seconds{deployment=~\"$deployment\"}) * 1000",
               "legendFormat": "{{deployment}} / {{pod}}"
             }
           ]
@@ -276,7 +290,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "app_cpu_utilization_percent{deployment=~\"$deployment\"}",
+              "expr": "rate(process_cpu_seconds_total{deployment=~\"$deployment\"}[20s]) / 0.25 * 100",
               "legendFormat": "{{deployment}} / {{pod}}"
             }
           ]
@@ -308,8 +322,307 @@ data:
         ]
       },
       "time": { "from": "now-10m", "to": "now" },
-      "title": "Kubernetes HPA: CPU Usage vs Event Loop Delay",
+      "title": "1. Server & HPA: CPU Usage vs Event Loop Delay",
       "uid": "hpa-cpu-vs-eld",
+      "version": 2
+    }
+  k6-client-dashboard.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [
+        {
+          "title": "Server & HPA Dashboard",
+          "type": "link",
+          "url": "/d/hpa-cpu-vs-eld/1-server-and-hpa-cpu-usage-vs-event-loop-delay?var-deployment=$deployment",
+          "keepTime": true,
+          "includeVars": true,
+          "targetBlank": false
+        }
+      ],
+      "panels": [
+        {
+          "type": "text",
+          "title": "k6 Client Load & Tail Latency Dashboard (Open-Model Arrival Rate)",
+          "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+          "options": {
+            "mode": "markdown",
+            "content": "**Client-side perspective exported directly by Grafana k6 (`--out experimental-prometheus-rw`)**. Use the **`Deployment` picker** above to compare `app-cpu` vs `app-eld`. k6 runs two parallel `constant-arrival-rate` scenarios (avoiding Coordinated Omission) with `noConnectionReuse: true` and tracks **p50, p90, p95, p99 tail latencies, TTFB (`http_req_waiting`), RPS, check pass rates, and active VUs**."
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "1. k6 Client End-to-End Tail Latency — p99, p95, p90, p50",
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 3 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "k6_http_req_duration_p99{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} client p99"
+            },
+            {
+              "refId": "B",
+              "expr": "k6_http_req_duration_p95{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} client p95"
+            },
+            {
+              "refId": "C",
+              "expr": "k6_http_req_duration_p90{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} client p90"
+            },
+            {
+              "refId": "D",
+              "expr": "k6_http_req_duration_p50{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} client p50"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "2. k6 Client TTFB / Server Wait Time (http_req_waiting) — p99 & p95",
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 3 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "k6_http_req_waiting_p99{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} TTFB p99"
+            },
+            {
+              "refId": "B",
+              "expr": "k6_http_req_waiting_p95{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} TTFB p95"
+            },
+            {
+              "refId": "C",
+              "expr": "k6_http_req_waiting_avg{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} TTFB avg"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "3. k6 Client Request Rate (RPS) by Deployment",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "fillOpacity": 12,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(k6_http_reqs_total{deployment=~\"$deployment\"}[15s])) by (deployment)",
+              "legendFormat": "{{deployment}} client RPS"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "4. k6 Client Error Rate & Check Success Rate (%)",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "k6_checks_rate{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} checks pass rate"
+            },
+            {
+              "refId": "B",
+              "expr": "k6_http_req_failed_rate{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} HTTP failure rate"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "5. k6 Active VUs & Dropped Iterations",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "k6_vus",
+              "legendFormat": "Active VUs"
+            },
+            {
+              "refId": "B",
+              "expr": "k6_vus_max",
+              "legendFormat": "Allocated Max VUs"
+            },
+            {
+              "refId": "C",
+              "expr": "rate(k6_dropped_iterations_total[15s])",
+              "legendFormat": "Dropped iterations/s"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "6. k6 Connection & Transfer Overhead Breakdown (p95)",
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 20 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 1,
+                "fillOpacity": 8,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "k6_http_req_connecting_p95{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} TCP connecting p95"
+            },
+            {
+              "refId": "B",
+              "expr": "k6_http_req_sending_p95{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} request sending p95"
+            },
+            {
+              "refId": "C",
+              "expr": "k6_http_req_receiving_p95{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} response receiving p95"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "7. Target Deployment Active Replicas (Context for Client Tail Latency)",
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 20 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "max": 6,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "stepAfter",
+                "lineWidth": 3,
+                "fillOpacity": 15,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "count(nodejs_eventloop_lag_p99_seconds{deployment=~\"$deployment\"}) by (deployment)",
+              "legendFormat": "{{deployment}} active pods"
+            }
+          ]
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 39,
+      "templating": {
+        "list": [
+          {
+            "name": "deployment",
+            "label": "Deployment",
+            "type": "custom",
+            "query": "app-cpu,app-eld",
+            "includeAll": true,
+            "multi": true,
+            "allValue": "app-cpu|app-eld",
+            "current": {
+              "selected": true,
+              "text": ["All"],
+              "value": ["$__all"]
+            },
+            "options": [
+              { "selected": true, "text": "All", "value": "$__all" },
+              { "selected": false, "text": "app-cpu", "value": "app-cpu" },
+              { "selected": false, "text": "app-eld", "value": "app-eld" }
+            ]
+          }
+        ]
+      },
+      "time": { "from": "now-10m", "to": "now" },
+      "title": "2. k6 Client Load & Tail Latency",
+      "uid": "k6-client-tail-latency",
       "version": 1
     }
 ---
@@ -388,4 +701,3 @@ spec:
       targetPort: 3000
       nodePort: 30300
       name: http
-

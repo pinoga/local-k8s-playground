@@ -10,7 +10,6 @@ metadata:
     app: app-cpu
     deployment: app-cpu
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: app-cpu
@@ -35,8 +34,6 @@ spec:
           env:
             - name: DEPLOYMENT_NAME
               value: "app-cpu"
-            - name: CPU_REQUEST_CORES
-              value: "0.25"
             - name: POD_NAME
               valueFrom:
                 fieldRef:
@@ -98,7 +95,7 @@ spec:
           averageUtilization: 65
 ---
 # ============================================================================
-# Deployment 2: app-eld (Scaled by KEDA HPA on Node.js Event Loop Delay p99)
+# Deployment 2: app-eld (Scaled by KEDA HPA on prom-client Event Loop Lag p99)
 # ============================================================================
 apiVersion: apps/v1
 kind: Deployment
@@ -109,7 +106,6 @@ metadata:
     app: app-eld
     deployment: app-eld
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: app-eld
@@ -134,8 +130,6 @@ spec:
           env:
             - name: DEPLOYMENT_NAME
               value: "app-eld"
-            - name: CPU_REQUEST_CORES
-              value: "0.25"
             - name: POD_NAME
               valueFrom:
                 fieldRef:
@@ -167,9 +161,7 @@ spec:
       targetPort: 3000
       name: http
 ---
-# KEDA ScaledObject creates an HPA targeting Event Loop Delay p99 > 20ms.
-# Note: With metricType: AverageValue (default), K8s HPA divides the returned metric
-# by currentReplicas, so `sum(...)` yields the exact per-pod average Event Loop Delay.
+# KEDA ScaledObject targeting prom-client's `nodejs_eventloop_lag_p99_seconds` (in ms, > 20ms above min resolution).
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -197,7 +189,6 @@ spec:
     - type: prometheus
       metadata:
         serverAddress: http://victoriametrics.hpa-demo.svc.cluster.local:8428
-        metricName: nodejs_eventloop_delay_p99_ms
-        query: sum(nodejs_eventloop_delay_p99_ms{deployment="app-eld"})
+        metricName: nodejs_eventloop_lag_p99_ms
+        query: sum((nodejs_eventloop_lag_p99_seconds{deployment="app-eld"} - nodejs_eventloop_lag_min_seconds{deployment="app-eld"}) * 1000)
         threshold: "20"
-

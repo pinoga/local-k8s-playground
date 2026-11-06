@@ -12,3 +12,4 @@
 - `k6s/`: Standalone Grafana k6 load-testing scripts (`loadgen.js`, etc.) following k6 best practices (open-model arrival rates, tail latency thresholds, tagged requests for Prometheus Remote Write).
 - `k8s/`: Declarative Kubernetes manifests and Kustomize configuration.
 - `scripts/`: Helper scripts for setup and switching load profiles.
+
