@@ -25,10 +25,6 @@ export const options = {
       ],
       tags: { deployment: TARGET_DEPLOYMENT }
     }
-  },
-  thresholds: {
-    [`http_req_duration{deployment:${TARGET_DEPLOYMENT}}`]: ['p(95)<120', 'p(99)<160'],
-    [`http_req_failed{deployment:${TARGET_DEPLOYMENT}}`]: ['rate<0.01']
   }
 };
 

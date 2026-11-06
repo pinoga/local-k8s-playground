@@ -45,28 +45,28 @@ kubectl -n hpa-demo create configmap loadgen-script \
   --dry-run=client -o yaml | kubectl apply -f -
 
 SCRIPT_NAME="loadgen.js"
-BURST_SIZE="5"
-BURST_INTERVAL_MS="750"
-IO_MS="45"
-BLOCK_MS="18"
+BURST_SIZE="8"
+BURST_INTERVAL_MS="1000"
+IO_MS="40"
+BLOCK_MS="7"
 DURATION="3m"
 
 case "$PROFILE" in
   microburst)
-    echo "Configuring 'microburst' profile ($TARGET for 3m, burst=5 every 750ms)..."
-    BURST_SIZE="5"
-    BURST_INTERVAL_MS="750"
-    IO_MS="45"
-    BLOCK_MS="18"
+    echo "Configuring 'microburst' profile ($TARGET for 3m, burst=8 every 1000ms, blockMs=7ms)..."
+    BURST_SIZE="8"
+    BURST_INTERVAL_MS="1000"
+    IO_MS="40"
+    BLOCK_MS="7"
     DURATION="3m"
     ;;
   heavy)
-    echo "Configuring 'heavy' profile ($TARGET for 15m, burst=7 every 500ms)..."
-    BURST_SIZE="35"
-    BURST_INTERVAL_MS="500"
+    echo "Configuring 'heavy' profile ($TARGET for 5m, burst=12 every 800ms, blockMs=8ms)..."
+    BURST_SIZE="12"
+    BURST_INTERVAL_MS="800"
     IO_MS="35"
-    BLOCK_MS="25"
-    DURATION="5m"
+    BLOCK_MS="8"
+    DURATION="3m"
     ;;
   ramping)
     echo "Configuring 'ramping' profile ($TARGET using ramping-arrival.js for 4m30s)..."

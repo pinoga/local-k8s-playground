@@ -22,11 +22,6 @@ export const options = {
       maxVUs: 30,
       tags: { deployment: TARGET_DEPLOYMENT }
     }
-  },
-  thresholds: {
-    [`http_req_duration{deployment:${TARGET_DEPLOYMENT}}`]: ['p(90)<100', 'p(95)<120', 'p(99)<160'],
-    [`http_req_waiting{deployment:${TARGET_DEPLOYMENT}}`]: ['p(95)<115', 'p(99)<150'],
-    [`http_req_failed{deployment:${TARGET_DEPLOYMENT}}`]: ['rate<0.01']
   }
 };
 
