@@ -1,0 +1,203 @@
+# ============================================================================
+# Deployment 1: app-cpu (Scaled by standard Kubernetes CPU Utilization HPA)
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-cpu
+  namespace: hpa-demo
+  labels:
+    app: app-cpu
+    deployment: app-cpu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-cpu
+  template:
+    metadata:
+      labels:
+        app: app-cpu
+        deployment: app-cpu
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: app
+          image: hpa-eld-demo:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: DEPLOYMENT_NAME
+              value: "app-cpu"
+            - name: CPU_REQUEST_CORES
+              value: "0.5"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 500m
+              memory: 64Mi
+            limits:
+              cpu: 1000m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-cpu
+  namespace: hpa-demo
+spec:
+  selector:
+    app: app-cpu
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: app-cpu-hpa
+  namespace: hpa-demo
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app-cpu
+  minReplicas: 1
+  maxReplicas: 6
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 30
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+---
+# ============================================================================
+# Deployment 2: app-eld (Scaled by KEDA HPA on Node.js Event Loop Delay p99)
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-eld
+  namespace: hpa-demo
+  labels:
+    app: app-eld
+    deployment: app-eld
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-eld
+  template:
+    metadata:
+      labels:
+        app: app-eld
+        deployment: app-eld
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: app
+          image: hpa-eld-demo:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: DEPLOYMENT_NAME
+              value: "app-eld"
+            - name: CPU_REQUEST_CORES
+              value: "0.5"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 500m
+              memory: 64Mi
+            limits:
+              cpu: 1000m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-eld
+  namespace: hpa-demo
+spec:
+  selector:
+    app: app-eld
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http
+---
+# KEDA ScaledObject creates an HPA targeting Event Loop Delay p99 > 20ms.
+# Note: With metricType: AverageValue (default), K8s HPA divides the returned metric
+# by currentReplicas, so `sum(...)` yields the exact per-pod average Event Loop Delay.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: app-eld-hpa
+  namespace: hpa-demo
+spec:
+  scaleTargetRef:
+    name: app-eld
+  pollingInterval: 5
+  cooldownPeriod: 30
+  minReplicaCount: 1
+  maxReplicaCount: 6
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 4
+              periodSeconds: 15
+        scaleDown:
+          stabilizationWindowSeconds: 30
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://victoriametrics.hpa-demo.svc.cluster.local:8428
+        metricName: nodejs_eventloop_delay_p99_ms
+        query: sum(nodejs_eventloop_delay_p99_ms{deployment="app-eld"})
+        threshold: "20"
+

@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loadgen-script
+  namespace: hpa-demo
+data:
+  loadgen.js: |
+    'use strict';
+    const http = require('node:http');
+    const { performance } = require('node:perf_hooks');
+
+    const TARGETS = [
+      { name: 'app-cpu', host: 'app-cpu.hpa-demo.svc.cluster.local', port: 3000 },
+      { name: 'app-eld', host: 'app-eld.hpa-demo.svc.cluster.local', port: 3000 }
+    ];
+
+    // Default workload: micro-burst of 5 concurrent requests every 650ms (~7.7 req/s)
+    // Each request does 45ms async I/O + 30ms synchronous JS work:
+    // - Total CPU per pod at 1 replica = ~7.7 * 30ms = ~230m = ~46% of 500m CPU request (below 65% CPU HPA target!)
+    // - Yet 5 concurrent 30ms sync blocks stall the single-threaded event loop for 150ms per burst!
+    const BURST_SIZE = parseInt(process.env.BURST_SIZE || '5', 10);
+    const BURST_INTERVAL_MS = parseInt(process.env.BURST_INTERVAL_MS || '650', 10);
+    const IO_MS = parseInt(process.env.IO_MS || '45', 10);
+    const BLOCK_MS = parseInt(process.env.BLOCK_MS || '30', 10);
+
+    const stats = {
+      'app-cpu': [],
+      'app-eld': []
+    };
+
+    function sendRequest(target) {
+      const start = performance.now();
+      const req = http.request(
+        {
+          hostname: target.host,
+          port: target.port,
+          path: `/work?ioMs=${IO_MS}&blockMs=${BLOCK_MS}`,
+          method: 'GET',
+          headers: { Connection: 'close' }, // Force L4 per-request load balancing across replicas
+          timeout: 5000
+        },
+        (res) => {
+          res.on('data', () => {});
+          res.on('end', () => {
+            const dur = performance.now() - start;
+            stats[target.name].push(dur);
+          });
+        }
+      );
+      req.on('error', () => {});
+      req.end();
+    }
+
+    setInterval(() => {
+      for (const target of TARGETS) {
+        for (let i = 0; i < BURST_SIZE; i++) {
+          sendRequest(target);
+        }
+      }
+    }, BURST_INTERVAL_MS);
+
+    function p95(arr) {
+      if (arr.length === 0) return 0;
+      const sorted = [...arr].sort((a, b) => a - b);
+      return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+    }
+
+    setInterval(() => {
+      const cpuP95 = p95(stats['app-cpu']).toFixed(1);
+      const eldP95 = p95(stats['app-eld']).toFixed(1);
+      const cpuCount = stats['app-cpu'].length;
+      const eldCount = stats['app-eld'].length;
+      stats['app-cpu'] = [];
+      stats['app-eld'] = [];
+      console.log(
+        `[LoadGen 5s Summary] app-cpu: ${cpuCount} reqs (p95=${cpuP95}ms) | app-eld: ${eldCount} reqs (p95=${eldP95}ms)`
+      );
+    }, 5000);
+
+    console.log(
+      `Started LoadGen: burst=${BURST_SIZE} reqs every ${BURST_INTERVAL_MS}ms (ioMs=${IO_MS}, blockMs=${BLOCK_MS})`
+    );
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: hpa-demo
+  labels:
+    app: loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: node:18-alpine
+          command: ["node", "/scripts/loadgen.js"]
+          env:
+            - name: BURST_SIZE
+              value: "5"
+            - name: BURST_INTERVAL_MS
+              value: "650"
+            - name: IO_MS
+              value: "45"
+            - name: BLOCK_MS
+              value: "30"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap:
+            name: loadgen-script
+

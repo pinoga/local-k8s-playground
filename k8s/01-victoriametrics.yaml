@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: victoriametrics
+  namespace: hpa-demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: victoriametrics-scrape
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/proxy", "nodes/metrics", "services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: victoriametrics-scrape
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: victoriametrics-scrape
+subjects:
+  - kind: ServiceAccount
+    name: victoriametrics
+    namespace: hpa-demo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vm-scrape-config
+  namespace: hpa-demo
+data:
+  scrape.yml: |
+    global:
+      scrape_interval: 2s
+    scrape_configs:
+      - job_name: 'demo-pods'
+        honor_labels: true
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - hpa-demo
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_ready]
+            action: keep
+            regex: true
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victoriametrics
+  namespace: hpa-demo
+  labels:
+    app: victoriametrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: victoriametrics
+  template:
+    metadata:
+      labels:
+        app: victoriametrics
+    spec:
+      serviceAccountName: victoriametrics
+      containers:
+        - name: victoriametrics
+          image: victoriametrics/victoria-metrics:v1.106.1
+          args:
+            - -promscrape.config=/etc/vm/scrape.yml
+            - -retentionPeriod=1d
+            - -search.latencyOffset=1s
+          ports:
+            - containerPort: 8428
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: scrape-config
+              mountPath: /etc/vm
+      volumes:
+        - name: scrape-config
+          configMap:
+            name: vm-scrape-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: victoriametrics
+  namespace: hpa-demo
+spec:
+  selector:
+    app: victoriametrics
+  ports:
+    - port: 8428
+      targetPort: 8428
+      name: http
+

@@ -1,0 +1,9 @@
+{
+  "name": "hpa-eld-demo",
+  "version": "1.0.0",
+  "description": "Node.js demo exposing Event Loop Delay, CPU, and HTTP latency metrics for Kubernetes HPA comparison",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

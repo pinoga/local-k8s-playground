@@ -1,0 +1,391 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+  namespace: hpa-demo
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: VictoriaMetrics
+        type: prometheus
+        uid: victoriametrics
+        access: proxy
+        url: http://victoriametrics.hpa-demo.svc.cluster.local:8428
+        isDefault: true
+        editable: true
+        jsonData:
+          timeInterval: "2s"
+          httpMethod: POST
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: hpa-demo
+data:
+  hpa-cpu-vs-eld.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "type": "text",
+          "title": "Why Event Loop Delay Beats CPU for Node.js Autoscaling",
+          "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+          "options": {
+            "mode": "markdown",
+            "content": "**Use the `Deployment` picker above** to inspect `app-cpu`, `app-eld`, or compare `All` side-by-side. Under interleaved async I/O + synchronous JS bursts, the single-threaded Node.js event loop queues up (`nodejs_eventloop_delay_p99_ms` > 80ms, spiking HTTP p95 latency) while average container CPU stays around **40–50%** (below the **65% CPU HPA threshold**). `app-eld` scales out immediately on Event Loop Delay (> 20ms) and keeps latency low, while `app-cpu` fails to scale (or scales far too late)."
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "1. Active Replicas (HPA Scale-out)",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 3 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "max": 7,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "stepAfter",
+                "lineWidth": 3,
+                "fillOpacity": 15,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "count(nodejs_eventloop_delay_p99_ms{deployment=~\"$deployment\"}) by (deployment)",
+              "legendFormat": "{{deployment}} replicas"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "2. HTTP Request Latency — p95 & p50 (ms)",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 3 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(http_request_duration_p95_ms{deployment=~\"$deployment\"}) by (deployment)",
+              "legendFormat": "{{deployment}} p95 latency"
+            },
+            {
+              "refId": "B",
+              "expr": "avg(http_request_duration_p50_ms{deployment=~\"$deployment\"}) by (deployment)",
+              "legendFormat": "{{deployment}} p50 latency"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "3. Throughput (Requests / sec)",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 3 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(http_requests_total{deployment=~\"$deployment\"}[10s])) by (deployment)",
+              "legendFormat": "{{deployment}} req/s (total)"
+            },
+            {
+              "refId": "B",
+              "expr": "avg(rate(http_requests_total{deployment=~\"$deployment\"}[10s])) by (deployment)",
+              "legendFormat": "{{deployment}} req/s (per pod)"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "4. Event Loop Delay — p99 & Mean (ELD HPA Threshold = 20ms)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 20 }
+                ]
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "fillOpacity": 12,
+                "showPoints": "never",
+                "thresholdsStyle": { "mode": "dashed" }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(nodejs_eventloop_delay_p99_ms{deployment=~\"$deployment\"}) by (deployment)",
+              "legendFormat": "{{deployment}} ELD p99"
+            },
+            {
+              "refId": "B",
+              "expr": "avg(nodejs_eventloop_delay_mean_ms{deployment=~\"$deployment\"}) by (deployment)",
+              "legendFormat": "{{deployment}} ELD mean"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "5. Pod CPU Utilization % of 500m Request (CPU HPA Threshold = 65%)",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 65 }
+                ]
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "fillOpacity": 12,
+                "showPoints": "never",
+                "thresholdsStyle": { "mode": "dashed" }
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg(app_cpu_utilization_percent{deployment=~\"$deployment\"}) by (deployment)",
+              "legendFormat": "{{deployment}} avg CPU %"
+            },
+            {
+              "refId": "B",
+              "expr": "avg(rate(process_cpu_seconds_total{deployment=~\"$deployment\"}[20s]) / 0.5 * 100) by (deployment)",
+              "legendFormat": "{{deployment}} 20s rate CPU %"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "6. Per-Pod Event Loop Delay p99 (ms)",
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 19 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 1,
+                "fillOpacity": 5,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "nodejs_eventloop_delay_p99_ms{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} / {{pod}}"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "7. Per-Pod CPU Utilization (%)",
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 19 },
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 1,
+                "fillOpacity": 5,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "app_cpu_utilization_percent{deployment=~\"$deployment\"}",
+              "legendFormat": "{{deployment}} / {{pod}}"
+            }
+          ]
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 39,
+      "templating": {
+        "list": [
+          {
+            "name": "deployment",
+            "label": "Deployment",
+            "type": "custom",
+            "query": "app-cpu,app-eld",
+            "includeAll": true,
+            "multi": true,
+            "allValue": "app-cpu|app-eld",
+            "current": {
+              "selected": true,
+              "text": ["All"],
+              "value": ["$__all"]
+            },
+            "options": [
+              { "selected": true, "text": "All", "value": "$__all" },
+              { "selected": false, "text": "app-cpu", "value": "app-cpu" },
+              { "selected": false, "text": "app-eld", "value": "app-eld" }
+            ]
+          }
+        ]
+      },
+      "time": { "from": "now-10m", "to": "now" },
+      "title": "Kubernetes HPA: CPU Usage vs Event Loop Delay",
+      "uid": "hpa-cpu-vs-eld",
+      "version": 1
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: hpa-demo
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana-oss:11.2.2
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: "Admin"
+            - name: GF_AUTH_DISABLE_LOGIN_FORM
+              value: "true"
+            - name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH
+              value: "/var/lib/grafana/dashboards/hpa-cpu-vs-eld.json"
+            - name: GF_USERS_DEFAULT_THEME
+              value: "dark"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: provisioning-datasources
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
+              subPath: datasources.yaml
+            - name: provisioning-dashboards
+              mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
+              subPath: dashboards.yaml
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+      volumes:
+        - name: provisioning-datasources
+          configMap:
+            name: grafana-provisioning
+        - name: provisioning-dashboards
+          configMap:
+            name: grafana-provisioning
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: hpa-demo
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30300
+      name: http
+
