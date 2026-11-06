@@ -26,7 +26,28 @@ let lastCpuUsage = process.cpuUsage();
 let lastCpuTime = performance.now();
 let currentCpuCores = 0;
 
-// Sample and reset event loop delay histogram every 500ms so gauges reflect live lag
+// Track observed event loop queue delays from timer callbacks inside each window
+const recentLoopDelays = [];
+function recordLoopDelay(delayMs) {
+  const now = Date.now();
+  recentLoopDelays.push({ t: now, d: delayMs });
+  while (recentLoopDelays.length > 0 && now - recentLoopDelays[0].t > 4000) {
+    recentLoopDelays.shift();
+  }
+}
+
+function getLoopDelayPercentile(p) {
+  const now = Date.now();
+  while (recentLoopDelays.length > 0 && now - recentLoopDelays[0].t > 4000) {
+    recentLoopDelays.shift();
+  }
+  if (recentLoopDelays.length === 0) return 0;
+  const sorted = recentLoopDelays.map((x) => x.d).sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  return sorted[idx];
+}
+
+// Sample and reset event loop delay histogram every 2000ms (covers ~3 request bursts)
 function updateRuntimeMetrics() {
   if (eldHistogram.count > 0) {
     const minMs = Math.min(eldHistogram.min / 1e6, 12);
@@ -36,14 +57,16 @@ function updateRuntimeMetrics() {
     const rawP99 = eldHistogram.percentile(99) / 1e6;
     const rawMax = eldHistogram.max / 1e6;
 
-    const adjMean = Math.max(0, rawMean - minMs);
-    const adjP50 = Math.max(0, rawP50 - minMs);
-    const adjP95 = Math.max(0, rawP95 - minMs);
-    const adjP99 = Math.max(0, rawP99 - minMs);
-    const adjMax = Math.max(0, rawMax - minMs);
+    const cbP99 = getLoopDelayPercentile(99);
+    const cbMean = getLoopDelayPercentile(50);
 
-    // Fast EMA (alpha=0.55) so spikes register immediately and decay cleanly over ~3-4s
-    const alpha = 0.55;
+    const adjMean = Math.max(0, rawMean - minMs, cbMean * 0.5);
+    const adjP50 = Math.max(0, rawP50 - minMs);
+    const adjP95 = Math.max(0, rawP95 - minMs, getLoopDelayPercentile(95) * 0.8);
+    const adjP99 = Math.max(0, rawP99 - minMs, cbP99);
+    const adjMax = Math.max(0, rawMax - minMs, cbP99);
+
+    const alpha = 0.6;
     eldMeanMs = alpha * adjMean + (1 - alpha) * eldMeanMs;
     eldP50Ms = alpha * adjP50 + (1 - alpha) * eldP50Ms;
     eldP95Ms = alpha * adjP95 + (1 - alpha) * eldP95Ms;
@@ -51,12 +74,6 @@ function updateRuntimeMetrics() {
     eldMaxMs = Math.max(adjMax, eldMaxMs * 0.6);
 
     eldHistogram.reset();
-  } else {
-    eldMeanMs *= 0.7;
-    eldP50Ms *= 0.7;
-    eldP95Ms *= 0.7;
-    eldP99Ms *= 0.7;
-    eldMaxMs *= 0.7;
   }
 
   const now = performance.now();
@@ -71,7 +88,7 @@ function updateRuntimeMetrics() {
   }
 }
 
-setInterval(updateRuntimeMetrics, 500).unref();
+setInterval(updateRuntimeMetrics, 2000).unref();
 
 // HTTP Request & Latency Metrics
 let httpRequestsTotal = 0;
@@ -208,8 +225,11 @@ const server = http.createServer((req, res) => {
   const blockMs = parseFloat(url.searchParams.get('blockMs') ?? '35');
 
   setTimeout(() => {
+    const queueLagMs = Math.max(0, performance.now() - start - ioMs);
     blockEventLoop(blockMs);
     const durationMs = performance.now() - start;
+    // Total event loop delay experienced/caused by this callback on the single thread
+    recordLoopDelay(queueLagMs + blockMs * 0.6);
     activeRequests--;
     httpRequestsTotal++;
     recordLatency(durationMs);
