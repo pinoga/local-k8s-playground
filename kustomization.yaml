@@ -8,6 +8,7 @@ configMapGenerator:
   - name: loadgen-script
     namespace: hpa-demo
     files:
+      - common.js=k6s/common.js
       - loadgen.js=k6s/loadgen.js
       - ramping-arrival.js=k6s/ramping-arrival.js
 

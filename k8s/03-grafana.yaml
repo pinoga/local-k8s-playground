@@ -39,7 +39,23 @@ metadata:
 data:
   hpa-cpu-vs-eld.json: |
     {
-      "annotations": { "list": [] },
+      "annotations": {
+        "list": [
+          {
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": false,
+            "iconColor": "#F2495C",
+            "name": "k6 Load Test Runs",
+            "target": {
+              "limit": 100,
+              "matchAny": true,
+              "tags": ["load-test"],
+              "type": "tags"
+            }
+          }
+        ]
+      },
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -330,7 +346,23 @@ data:
     }
   k6-client-dashboard.json: |
     {
-      "annotations": { "list": [] },
+      "annotations": {
+        "list": [
+          {
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": false,
+            "iconColor": "#F2495C",
+            "name": "k6 Load Test Runs",
+            "target": {
+              "limit": 100,
+              "matchAny": true,
+              "tags": ["load-test"],
+              "type": "tags"
+            }
+          }
+        ]
+      },
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,

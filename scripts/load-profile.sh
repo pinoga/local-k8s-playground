@@ -39,6 +39,7 @@ kubectl -n hpa-demo delete job -l app=loadgen --ignore-not-found --wait=true
 # Ensure loadgen-script ConfigMap in k8s is up to date with k6s/ scripts
 echo "Updating loadgen-script ConfigMap from k6s/..."
 kubectl -n hpa-demo create configmap loadgen-script \
+  --from-file=common.js="$ROOT_DIR/k6s/common.js" \
   --from-file=loadgen.js="$ROOT_DIR/k6s/loadgen.js" \
   --from-file=ramping-arrival.js="$ROOT_DIR/k6s/ramping-arrival.js" \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -61,11 +62,11 @@ case "$PROFILE" in
     ;;
   heavy)
     echo "Configuring 'heavy' profile ($TARGET for 15m, burst=7 every 500ms)..."
-    BURST_SIZE="7"
+    BURST_SIZE="35"
     BURST_INTERVAL_MS="500"
     IO_MS="35"
     BLOCK_MS="25"
-    DURATION="15m"
+    DURATION="5m"
     ;;
   ramping)
     echo "Configuring 'ramping' profile ($TARGET using ramping-arrival.js for 4m30s)..."
@@ -109,6 +110,8 @@ spec:
           env:
             - name: TARGET_DEPLOYMENT
               value: "${TARGET}"
+            - name: PROFILE
+              value: "${PROFILE}"
             - name: K6_PROMETHEUS_RW_SERVER_URL
               value: "http://victoriametrics.hpa-demo.svc.cluster.local:8428/api/v1/write"
             - name: K6_PROMETHEUS_RW_TREND_STATS
