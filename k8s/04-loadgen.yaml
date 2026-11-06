@@ -19,9 +19,9 @@ data:
     // - Total CPU per pod at 1 replica = ~7.7 * 30ms = ~230m = ~46% of 500m CPU request (below 65% CPU HPA target!)
     // - Yet 5 concurrent 30ms sync blocks stall the single-threaded event loop for 150ms per burst!
     const BURST_SIZE = parseInt(process.env.BURST_SIZE || '5', 10);
-    const BURST_INTERVAL_MS = parseInt(process.env.BURST_INTERVAL_MS || '650', 10);
+    const BURST_INTERVAL_MS = parseInt(process.env.BURST_INTERVAL_MS || '750', 10);
     const IO_MS = parseInt(process.env.IO_MS || '45', 10);
-    const BLOCK_MS = parseInt(process.env.BLOCK_MS || '30', 10);
+    const BLOCK_MS = parseInt(process.env.BLOCK_MS || '18', 10);
 
     const stats = {
       'app-cpu': [],
@@ -106,11 +106,11 @@ spec:
             - name: BURST_SIZE
               value: "5"
             - name: BURST_INTERVAL_MS
-              value: "650"
+              value: "750"
             - name: IO_MS
               value: "45"
             - name: BLOCK_MS
-              value: "30"
+              value: "18"
           resources:
             requests:
               cpu: 50m

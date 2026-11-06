@@ -187,7 +187,7 @@ data:
         },
         {
           "type": "timeseries",
-          "title": "5. Pod CPU Utilization % of 500m Request (CPU HPA Threshold = 65%)",
+          "title": "5. Pod CPU Utilization % of 250m Request (CPU HPA Threshold = 65%)",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
           "datasource": { "type": "prometheus", "uid": "victoriametrics" },
           "fieldConfig": {
@@ -221,7 +221,7 @@ data:
             },
             {
               "refId": "B",
-              "expr": "avg(rate(process_cpu_seconds_total{deployment=~\"$deployment\"}[20s]) / 0.5 * 100) by (deployment)",
+              "expr": "avg(rate(process_cpu_seconds_total{deployment=~\"$deployment\"}[20s]) / 0.25 * 100) by (deployment)",
               "legendFormat": "{{deployment}} 20s rate CPU %"
             }
           ]
