@@ -217,7 +217,6 @@ data:
             "defaults": {
               "unit": "percent",
               "min": 0,
-              "max": 100,
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -280,7 +279,6 @@ data:
             "defaults": {
               "unit": "percent",
               "min": 0,
-              "max": 100,
               "custom": {
                 "drawStyle": "line",
                 "lineInterpolation": "smooth",
